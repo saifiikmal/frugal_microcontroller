@@ -459,7 +459,7 @@ void setConfig(String data) {
   Serial.print("Pause Between Spray: ");
   Serial.println(pauseBetweenSpray);
   bluetoothPrintLine("Pause Between Spray: " + value2Str);
-
+  
 }
 
 void bluetoothPrintLine(String line)
