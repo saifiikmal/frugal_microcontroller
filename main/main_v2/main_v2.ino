@@ -30,6 +30,9 @@ const int BLUE_PIN = 18;
 //Timer
 unsigned long intervalBle = 300000;
 bool bleStartBool = false;
+bool bleConnected = false;
+bool bleEnabled = false;
+bool bleUpdated = false;
 
 RTC_DATA_ATTR int deepSleepInt = 0;
 RTC_DATA_ATTR int sprayNum = 0;
@@ -49,7 +52,9 @@ String jsonString = "";
 unsigned long currentMillis = 0;
 
 void killBle() {
-  assignLed();
+  // assignLed();
+  bleEnabled = false;
+  bleConnected = false;
   bleStartBool = true;
   BLEDevice::getAdvertising()->stop();
   //pServer->stop();
@@ -62,8 +67,8 @@ class MyServerCallbacks:public BLEServerCallbacks, public BLECharacteristicCallb
         std::string value = pCharacteristic->getValue();
         
         if (value.length() > 0) {
-            Serial.println("Received chunk:");
-            Serial.println((char*)&value[0]);
+            // Serial.println("Received chunk:");
+            // Serial.println((char*)&value[0]);
 
             jsonString += String(value.c_str());
             jsonString.trim();
@@ -124,6 +129,11 @@ class MyServerCallbacks:public BLEServerCallbacks, public BLECharacteristicCallb
 
     }
 
+    void onConnect(BLEServer* pServer) {
+      bleConnected = true;
+      // changeLed("blue");
+    }
+
     void onDisconnect(BLEServer* pServer) {
         // Client has disconnected
         Serial.println("Client disconnected");
@@ -148,7 +158,7 @@ void setup() {
 
   digitalWrite(RED_PIN, LOW);
   digitalWrite(GREEN_PIN, LOW);
-  digitalWrite(BLUE_PIN, HIGH);
+  digitalWrite(BLUE_PIN, LOW);
 
   loadSettings();
 
@@ -161,7 +171,7 @@ void setup() {
     if (status) {
       sprayCan(sprayNum);
     }
-    assignLed();
+    // assignLed();
   }
   printCurrentTime();
   Serial.print("Flash chip size: ");
@@ -171,6 +181,19 @@ void setup() {
 
 void loop() {
   // put your main code here, to run repeatedly:
+
+  if (bleEnabled && !bleConnected && !bleUpdated) {
+    BleEnabledLed();
+  }
+
+  if (bleEnabled && bleConnected && !bleUpdated) {
+    BleConnectedLed();
+  }
+
+  if (bleEnabled && bleConnected && bleUpdated) {
+    BleUpdatedLed();
+  }
+
   timerKillBle();
 
   if (bleStartBool == true) {
@@ -210,7 +233,9 @@ void enableBle() {
     BLEAdvertising *pAdvertising = pServer->getAdvertising();
     pAdvertising->start();
 
-    changeLed("blue");
+    // changeLed("blue");
+    // assignLed();
+    bleEnabled = true;
   
     Serial.println("Characteristic defined!");
     Serial.println("Now you can read/write it with your phone!");  
@@ -229,6 +254,12 @@ void sprayCan(int spraynum){
     Serial.print("spraynum is ");
     Serial.println(spraynum);
     if(spraynum == 0) return;
+    time_t now;
+    time(&now);
+
+    lastDispenseCt = spraynum;
+    lastDispense = (int)now;
+
     for(int i=0;i<spraynum;i++){
         Serial.println(i);
         digitalWrite(MOTOR_PIN,HIGH);
@@ -238,12 +269,6 @@ void sprayCan(int spraynum){
         counter++;
         delay(pauseBetweenSpray);
     }
-
-    time_t now;
-    time(&now);
-
-    lastDispenseCt = spraynum;
-    lastDispense = (int)now;
 
     updateLog();
 }
@@ -366,7 +391,8 @@ long calculateTimeDifference(const String& currentTime, const String& settingTim
   // Parse and set the time
   sscanf(currentTime.c_str(), "%d:%d", &currentTm.tm_hour, &currentTm.tm_min);
   sscanf(settingTime.c_str(), "%d:%d", &settingTm.tm_hour, &settingTm.tm_min);
-  currentTm.tm_sec = settingTm.tm_sec = 0; // Reset seconds to 0
+  // currentTm.tm_sec = 
+  settingTm.tm_sec = 0; // Reset seconds to 0
 
   // Add elapsed days to the setting time
   settingTm.tm_mday += elapsedDays;
@@ -509,6 +535,12 @@ void setTimer(String data) {
       // return;
   }
 
+  Serial.println("set timer: ");
+  Serial.println(data);
+
+  Serial.println("memory usage: ");
+  Serial.println(doc.memoryUsage());
+
   // Extract values
   String timeValue = doc["time"].as<String>();  // "2023-01-23 18:57:19"
   int testSprayCount;
@@ -565,12 +597,12 @@ void setTimer(String data) {
                   Serial.print(sprayTime);
                   Serial.println(" failed to save");
               }
-              Serial.print("Index: ");
-              Serial.print(sprayCount);
+              // Serial.print("Index: ");
+              // Serial.print(sprayCount);
               Serial.println(" Time: " + timeStr + " Dispense: " + String(dispenseValue));
 
               //debug
-              nvsCheck();
+              // nvsCheck();
           }
       }
 
@@ -580,7 +612,10 @@ void setTimer(String data) {
   Serial.println("start spraying test");
   sprayCan(testSprayCount);
 
+  // BleUpdatedLed();
+
   if (pServer->getConnectedCount() > 0) {
+    bleUpdated = true;
     String response = "TIMER:1";
     pCharacteristic->setValue(response.c_str());
     pCharacteristic->notify();
@@ -656,6 +691,7 @@ void sync(String data) {
   }
 
   if (pServer->getConnectedCount() > 0) {
+    // bleUpdated = true;
     String response = "SYNC:1";
     pCharacteristic->setValue(response.c_str());
     pCharacteristic->notify();
@@ -693,6 +729,7 @@ void setConfig(String data) {
   }
 
   if (pServer->getConnectedCount() > 0) {
+    bleUpdated = true;
     String response = "SET:1";
     pCharacteristic->setValue(response.c_str());
     pCharacteristic->notify();
@@ -761,15 +798,37 @@ void changeLed(String color) {
 }
 
 void assignLed() {
-  if (counter >= 0 && counter < 650) {
+  if (counter >= 0 && counter < 700) {
     changeLed("green");
   }
-  if (counter >= 650 && counter < 800) {
+  if (counter >= 700 && counter < 800) {
     changeLed("orange");
   }
   if (counter >= 800) {
     changeLed("red");
   }
+}
+
+void BleEnabledLed() {
+  digitalWrite(BLUE_PIN, HIGH);
+  delay(750);
+  digitalWrite(BLUE_PIN, LOW);
+  delay(750);
+}
+
+void BleConnectedLed() {
+  digitalWrite(BLUE_PIN, HIGH);
+}
+
+void BleUpdatedLed() {
+  for (int j=0; j <6; j++) {
+    digitalWrite(BLUE_PIN, HIGH);
+    delay(100);
+    digitalWrite(BLUE_PIN, LOW);
+    delay(100);
+  }
+
+  bleUpdated = false;
 }
 
 
