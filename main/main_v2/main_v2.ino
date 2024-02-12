@@ -123,6 +123,14 @@ class MyServerCallbacks:public BLEServerCallbacks, public BLECharacteristicCallb
                 printCurrentTime();
               }
 
+              if (jsonString.startsWith("DEMO")) {
+                demoSpray(1);
+
+                String response = "DEMO:1";
+                pCharacteristic->setValue(response.c_str());
+                pCharacteristic->notify();
+              }
+
               jsonString = "";
             }
         }
@@ -169,7 +177,7 @@ void setup() {
     bleStartBool = true;
     Serial.println("Wake up from deep sleep and start spraying");
     if (status) {
-      sprayCan(sprayNum);
+      sprayCan(sprayNum, true);
     }
     // assignLed();
   }
@@ -242,7 +250,7 @@ void enableBle() {
 }
 
 void timerKillBle(){
-  if(millis() - currentMillis > intervalBle && bleStartBool == false && pServer->getConnectedCount() == 0){
+  if(millis() - currentMillis > intervalBle && pServer->getConnectedCount() == 0){
       killBle();
   }
   else if( deepSleepInt == 1){
@@ -250,15 +258,15 @@ void timerKillBle(){
   }
 }
 
-void sprayCan(int spraynum){
+void sprayCan(int spraynum, bool updateCt){
     Serial.print("spraynum is ");
     Serial.println(spraynum);
     if(spraynum == 0) return;
     time_t now;
     time(&now);
 
-    lastDispenseCt = spraynum;
-    lastDispense = (int)now;
+    if(updateCt) lastDispenseCt = spraynum;
+    if(updateCt) lastDispense = (int)now;
 
     for(int i=0;i<spraynum;i++){
         Serial.println(i);
@@ -266,11 +274,22 @@ void sprayCan(int spraynum){
         delay(sprayPressDuration);
         digitalWrite(MOTOR_PIN,LOW);
 
-        counter++;
+        if(updateCt) counter++;
         delay(pauseBetweenSpray);
     }
 
-    updateLog();
+    if(updateCt) {
+      updateLog();
+      // kill ble after spray to save battery
+      if(pServer->getConnectedCount() == 0){
+        delay(5000);
+        killBle();
+      }
+    }
+}
+
+void demoSpray(int spraynum) {
+  sprayCan(spraynum, false)
 }
 
 void enterDeepSleep() {
@@ -610,7 +629,7 @@ void setTimer(String data) {
 
   p.end();
   Serial.println("start spraying test");
-  sprayCan(testSprayCount);
+  sprayCan(testSprayCount, false);
 
   // BleUpdatedLed();
 
