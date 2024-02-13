@@ -170,6 +170,8 @@ void setup() {
 
   loadSettings();
 
+  Serial.println("deepSleepInt:" + String(deepSleepInt) + ", bleStartBool: " + bleStartBool);
+
   if (deepSleepInt == 0) {
     // updateTime("2023-12-27 18:00:00");
     enableBle();
@@ -181,7 +183,7 @@ void setup() {
     }
     // assignLed();
   }
-  printCurrentTime();
+  // printCurrentTime();
   Serial.print("Flash chip size: ");
   Serial.println(ESP.getFlashChipSize());
   nvsCheck();
@@ -268,6 +270,21 @@ void sprayCan(int spraynum, bool updateCt){
     if(updateCt) lastDispenseCt = spraynum;
     if(updateCt) lastDispense = (int)now;
 
+    if(updateCt) {
+      Serial.println("updateLog");
+      p.begin("spraySettings", false);
+
+      p.putUInt("last_dispense", lastDispense);
+      p.putUInt("last_disp_ct", lastDispenseCt);
+      // updateLog();
+      // kill ble after spray to save battery
+      // if(pServer->getConnectedCount() == 0){
+      //   delay(5000);
+      //   killBle();
+        
+      // }
+    }
+
     for(int i=0;i<spraynum;i++){
         Serial.println(i);
         digitalWrite(MOTOR_PIN,HIGH);
@@ -278,22 +295,19 @@ void sprayCan(int spraynum, bool updateCt){
         delay(pauseBetweenSpray);
     }
 
-    if(updateCt) {
-      updateLog();
-      // kill ble after spray to save battery
-      if(pServer->getConnectedCount() == 0){
-        delay(5000);
-        killBle();
-      }
+    if (updateCt) {
+      p.putUInt("ct", counter);
+
+      p.end();
     }
 }
 
 void demoSpray(int spraynum) {
-  sprayCan(spraynum, false)
+  sprayCan(spraynum, false);
 }
 
 void enterDeepSleep() {
-
+  Serial.println("enterDeepSleep");
     deepSleepInt = 1;
 
     unsigned long long sleepDuration = getSleepDuration();
@@ -329,6 +343,7 @@ void nvsCheck(){
 }
 
 void updateLog() {
+  Serial.println("updateLog");
   p.begin("spraySettings", false);
 
   p.putUInt("last_dispense", lastDispense);
@@ -427,6 +442,7 @@ long calculateTimeDifference(const String& currentTime, const String& settingTim
 }
 
 long getSleepDuration() {
+  Serial.println("getSleepDuration");
   p.begin("sprayTimer",false);//Read Write access
   time_t now;
   time(&now);
@@ -569,6 +585,7 @@ void setTimer(String data) {
   else{
       testSprayCount = 0;
   }
+  String timerMode = doc["mode"].as<String>();
 
   updateTime(timeValue);
   JsonArray settings = doc["settings"].as<JsonArray>();
@@ -584,47 +601,96 @@ void setTimer(String data) {
 
   Serial.println("Settings: ");
 
+  if (timerMode == "preset") {
+    String timeStart = doc["startTime"].as<String>();
+    int dispAmt = doc["dispenseAmount"].as<int>();
+    int dispInterval = doc["interval"].as<int>();
 
-  for(int i = 0; i < settings.size(); i++) {
-      JsonVariant setting = settings[i];
+    int arrSize = (60 / dispInterval) * 24;
+
+    struct tm settingTm;
+    time_t now;
+    time(&now);
+
+    // Initialize both structs with current date
+    localtime_r(&now, &settingTm);
+
+    sscanf(timeStart.c_str(), "%d:%d", &settingTm.tm_hour, &settingTm.tm_min);
+
+    time_t newTime = mktime(&settingTm);
+
+    String timers[arrSize];
+    char settingTimeStr[6];
+
+    for (int i = 0; i < arrSize; i++) {
+      Serial.print("b4 add: " + String(settingTm.tm_min));
+      newTime += dispInterval * 60;
+      Serial.print("after add: " + String(settingTm.tm_min));
+
+      struct tm *newTimeinfo = localtime(&newTime);
+
+      strftime(settingTimeStr, sizeof(settingTimeStr), "%H:%M", newTimeinfo);
+      timers[i] = String(settingTimeStr);
+
+      Serial.print("timers[" + String(i) +"]: " + timers[i]);
+    }
+
+    for(int i = 0; i < 7; i++) {
       String sprayCountTotalKey = "d"+String(i)+"sct";
-      if(setting.size() == 0){
-          p.putString(sprayCountTotalKey.c_str(),"0");
-          Serial.print("day_");
-          Serial.print(i);
-          Serial.print("_sprayCountTotal is : ");
-          Serial.println("0");
-          continue;
-      }
-      else{
-          int sprayCountTotal = setting.size();
-          p.putString(sprayCountTotalKey.c_str(),String(sprayCountTotal));
-          Serial.print("day_");
-          Serial.print(i);
-          Serial.print("_sprayCountTotal is : ");
-          Serial.println(sprayCountTotal);
-          for(int j = 0; j<setting.size();j++){
-              JsonVariant setting_daily = setting[j];
-              String timeStr = setting_daily["time"];
-              String dispenseValue = setting_daily["dispense"];
-      
-              String sprayCount = "d"+String(i)+"sc" + String(j+1);
-              String sprayTime = "d"+String(i)+"st" + String(j+1);
-              p.putString(sprayCount.c_str(),dispenseValue);
-              p.putString(sprayTime.c_str(),timeStr);
-              if(p.getString(sprayTime.c_str(),"-1") == "-1"){
-                  Serial.print(sprayTime);
-                  Serial.println(" failed to save");
-              }
-              // Serial.print("Index: ");
-              // Serial.print(sprayCount);
-              Serial.println(" Time: " + timeStr + " Dispense: " + String(dispenseValue));
+      p.putString(sprayCountTotalKey.c_str(),String(arrSize));
 
-              //debug
-              // nvsCheck();
-          }
-      }
+      for (int j = 0; j < arrSize; j++) {
+        String sprayCount = "d"+String(i)+"sc" + String(j+1);
+        String sprayTime = "d"+String(i)+"st" + String(j+1);
 
+        p.putString(sprayCount.c_str(),String(dispAmt));
+        p.putString(sprayTime.c_str(),timers[j]);
+
+        Serial.println(" Time: " + String(i) + " " + String(j) + " " + timers[j] + " " + String(dispAmt));
+      }
+    }
+  } else if (timerMode == "custom") {
+    for(int i = 0; i < settings.size(); i++) {
+        JsonVariant setting = settings[i];
+        String sprayCountTotalKey = "d"+String(i)+"sct";
+        if(setting.size() == 0){
+            p.putString(sprayCountTotalKey.c_str(),"0");
+            Serial.print("day_");
+            Serial.print(i);
+            Serial.print("_sprayCountTotal is : ");
+            Serial.println("0");
+            continue;
+        }
+        else{
+            int sprayCountTotal = setting.size();
+            p.putString(sprayCountTotalKey.c_str(),String(sprayCountTotal));
+            Serial.print("day_");
+            Serial.print(i);
+            Serial.print("_sprayCountTotal is : ");
+            Serial.println(sprayCountTotal);
+            for(int j = 0; j<setting.size();j++){
+                JsonVariant setting_daily = setting[j];
+                String timeStr = setting_daily["time"];
+                String dispenseValue = setting_daily["dispense"];
+        
+                String sprayCount = "d"+String(i)+"sc" + String(j+1);
+                String sprayTime = "d"+String(i)+"st" + String(j+1);
+                p.putString(sprayCount.c_str(),dispenseValue);
+                p.putString(sprayTime.c_str(),timeStr);
+                if(p.getString(sprayTime.c_str(),"-1") == "-1"){
+                    Serial.print(sprayTime);
+                    Serial.println(" failed to save");
+                }
+                // Serial.print("Index: ");
+                // Serial.print(sprayCount);
+                Serial.println(" Time: " + timeStr + " Dispense: " + String(dispenseValue));
+
+                //debug
+                // nvsCheck();
+            }
+        }
+
+    }
   }
 
   p.end();
