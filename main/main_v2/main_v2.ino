@@ -214,7 +214,9 @@ void loop() {
 void enableBle() {
   //String bleAddress =String(BLEDevice::getAddress().toString().c_str());
     //Serial.println(bleAddress);
-    BLEDevice::init("Frugal");
+    String macAddress = getBleMacAddress();
+    String deviceName = "FRUGAL " + macAddress;
+    BLEDevice::init(deviceName.c_str());
     BLEDevice::setMTU(517);
     pServer = BLEDevice::createServer();
 
