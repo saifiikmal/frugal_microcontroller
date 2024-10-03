@@ -1,3 +1,4 @@
+// Frugal v1.0.3
 #include <Preferences.h>
 #include <ArduinoJson.h>
 #include <BLEDevice.h>
@@ -446,90 +447,104 @@ long calculateTimeDifference(const String& currentTime, const String& settingTim
 long getSleepDuration() {
   Serial.println("getSleepDuration");
   p.begin("sprayTimer",false);//Read Write access
-  time_t now;
-  time(&now);
-  struct tm* currentTime = localtime(&now);
-  char currentTimeStr[6];
-  strftime(currentTimeStr, sizeof(currentTimeStr), "%H:%M", currentTime);
-  int currentDayOfWeek =  currentTime->tm_wday;
-  Serial.print("currentDayOfWeek is ");
-  Serial.println(currentDayOfWeek);
 
-  String nextTime;
-  long minDiff = LONG_MAX;
-  bool foundFutureTime = false;
-  int elapseDays = 0;
+  String mode = p.getString("mode", "");
 
-  //debug
-  String debugInt = p.getString("d1st1","12:34");
-  Serial.print("debug Int is : ");
-  Serial.println(debugInt);
+  if (mode == "custom") {
+    time_t now;
+    time(&now);
+    struct tm* currentTime = localtime(&now);
+    char currentTimeStr[6];
+    strftime(currentTimeStr, sizeof(currentTimeStr), "%H:%M", currentTime);
+    int currentDayOfWeek =  currentTime->tm_wday;
+    Serial.print("currentDayOfWeek is ");
+    Serial.println(currentDayOfWeek);
 
-  for(int i = currentDayOfWeek; i < 7; i++){
-      long diff;
-      String sprayCountTotalKey = "d"+String(i)+"sct";
-      int sprayCountTotal = p.getString(sprayCountTotalKey.c_str(), "0").toInt();
-      Serial.println(sprayCountTotalKey +": " + String(sprayCountTotal));
-      if(sprayCountTotal == 0){ //if today dont have continue to see tomorrow etc]
-          elapseDays++;
-          Serial.println("today no more");
-          continue;
-      }
-      for (int j=0; j <sprayCountTotal; j++) {
-          String sprayTimeKey = "d"+String(i)+"st" + String(j+1);
-          String sprayCountKey = "d"+String(i)+"sc" + String(j+1);
-          String settingTime = p.getString(sprayTimeKey.c_str(), "00:00");
-          Serial.println(settingTime);
-          diff = calculateTimeDifference(currentTimeStr, settingTime, elapseDays);
-  
-          if (diff > 0 && diff < minDiff) {  // Select only future times
-              minDiff = diff;
-              nextTime = settingTime;
-              foundFutureTime = true;
-              sprayNum = p.getString(sprayCountKey.c_str(),"0").toInt();
-              
-          }
-      }
-      if(foundFutureTime == true) {
+    String nextTime;
+    long minDiff = LONG_MAX;
+    bool foundFutureTime = false;
+    int elapseDays = 0;
+
+    //debug
+    String debugInt = p.getString("d1st1","12:34");
+    Serial.print("debug Int is : ");
+    Serial.println(debugInt);
+
+    for(int i = currentDayOfWeek; i < 7; i++){
+        long diff;
+        String sprayCountTotalKey = "d"+String(i)+"sct";
+        int sprayCountTotal = p.getString(sprayCountTotalKey.c_str(), "0").toInt();
+        Serial.println(sprayCountTotalKey +": " + String(sprayCountTotal));
+        if(sprayCountTotal == 0){ //if today dont have continue to see tomorrow etc]
+            elapseDays++;
+            Serial.println("today no more");
+            continue;
+        }
+        for (int j=0; j <sprayCountTotal; j++) {
+            String sprayTimeKey = "d"+String(i)+"st" + String(j+1);
+            String sprayCountKey = "d"+String(i)+"sc" + String(j+1);
+            String settingTime = p.getString(sprayTimeKey.c_str(), "00:00");
+            Serial.println(settingTime);
+            diff = calculateTimeDifference(currentTimeStr, settingTime, elapseDays);
+    
+            if (diff > 0 && diff < minDiff) {  // Select only future times
+                minDiff = diff;
+                nextTime = settingTime;
+                foundFutureTime = true;
+                sprayNum = p.getString(sprayCountKey.c_str(),"0").toInt();
+                
+            }
+        }
+        if(foundFutureTime == true) {
+          p.end();
+          return minDiff;
+        }
+        else elapseDays++;
+    
+    }
+    if (!foundFutureTime){
+        for(int i=0; i <= currentDayOfWeek; i++){
+            long diff;
+            String sprayCountTotalKey = "d"+String(i)+"sct";
+            int sprayCountTotal = p.getString(sprayCountTotalKey.c_str(),"0").toInt();
+            Serial.println("Spray Count Total: " + String(sprayCountTotal));
+            if(sprayCountTotal == 0){ //if today dont have continue to see tomorrow etc
+                elapseDays++;
+                continue;
+            }
+            for (int j=0; j <sprayCountTotal; j++) {
+                String sprayTimeKey = "d"+String(i)+"st" + String(j+1);
+                String sprayCountKey = "d"+String(i)+"sc" + String(j+1);
+                String settingTime = p.getString(sprayTimeKey.c_str(), "00:00:00");
+                diff = calculateTimeDifference(currentTimeStr, settingTime, elapseDays);
+        
+                if (diff > 0 && diff < minDiff) {  // Select only future times
+                    minDiff = diff;
+                    nextTime = settingTime;
+                    foundFutureTime = true;
+                    sprayNum = p.getString(sprayCountKey.c_str(),"0").toInt();
+                }
+            }
+            if(foundFutureTime == true) {
+              p.end();
+              return minDiff;
+            }
+            else elapseDays++;
+        }
+        Serial.println("failed 1");
         p.end();
-        return minDiff;
-      }
-      else elapseDays++;
-  
+        return 604800;
+    }
   }
-  if (!foundFutureTime){
-      for(int i=0; i <= currentDayOfWeek; i++){
-          long diff;
-          String sprayCountTotalKey = "d"+String(i)+"sct";
-          int sprayCountTotal = p.getString(sprayCountTotalKey.c_str(),"0").toInt();
-          Serial.println("Spray Count Total: " + String(sprayCountTotal));
-          if(sprayCountTotal == 0){ //if today dont have continue to see tomorrow etc
-              elapseDays++;
-              continue;
-          }
-          for (int j=0; j <sprayCountTotal; j++) {
-              String sprayTimeKey = "d"+String(i)+"st" + String(j+1);
-              String sprayCountKey = "d"+String(i)+"sc" + String(j+1);
-              String settingTime = p.getString(sprayTimeKey.c_str(), "00:00:00");
-              diff = calculateTimeDifference(currentTimeStr, settingTime, elapseDays);
-      
-              if (diff > 0 && diff < minDiff) {  // Select only future times
-                  minDiff = diff;
-                  nextTime = settingTime;
-                  foundFutureTime = true;
-                  sprayNum = p.getString(sprayCountKey.c_str(),"0").toInt();
-              }
-          }
-          if(foundFutureTime == true) {
-            p.end();
-            return minDiff;
-          }
-          else elapseDays++;
-      }
-      Serial.println("failed 1");
-      p.end();
-      return 604800;
+
+  if (mode == "preset") {
+    int dispInterval = p.getInt("interval", 60);
+    sprayNum = p.getInt("dispAmt", 0);
+    long nextInterval = getNearestInterval(dispInterval);
+    p.end();
+    return nextInterval;
   }
+
   Serial.println("failed 2");
   p.end();
   return 604800;
@@ -554,6 +569,49 @@ void loadSettings() {
   canister = p.getString("canister", "");
 
   p.end();
+}
+
+long getNearestInterval(int dispInterval) {
+   struct tm settingTm, currentTm;
+    time_t now;
+    time(&now);
+
+    // Initialize both structs with current date
+    localtime_r(&now, &settingTm);
+    localtime_r(&now, &currentTm);
+    
+    // Calculate the current interval and the nearest future interval
+    int currentInterval = (settingTm.tm_min / dispInterval) * dispInterval;
+    int nearestMinute = currentInterval + dispInterval;
+
+    if (nearestMinute >= 60) {
+        nearestMinute -= 60;
+        settingTm.tm_hour = (settingTm.tm_hour + 1) % 24;  // Handle hour overflow
+    } else {
+        settingTm.tm_hour = settingTm.tm_hour;  // Maintain current hour if not rolling over
+    }
+
+    // Update the minute and second fields
+    settingTm.tm_min = nearestMinute;
+    settingTm.tm_sec = 0;  // Set seconds to 0 for the next interval
+
+    time_t newTime = mktime(&settingTm);  // Updated time with the nearest interval
+    time_t current = mktime(&currentTm);
+    long diffSecs = difftime(newTime, current);
+    char nearestTimeStr[9];  // Buffer to store the formatted time
+    char currentTimeStr[9];
+    strftime(nearestTimeStr, sizeof(nearestTimeStr), "%H:%M:%S", localtime(&newTime));
+    strftime(currentTimeStr, sizeof(currentTimeStr), "%H:%M:%S", localtime(&current));
+
+    // Print or return the nearest time
+    Serial.print("Current time: ");
+    Serial.println(currentTimeStr);
+    Serial.print("Next nearest time: ");
+    Serial.println(nearestTimeStr);
+    Serial.print("Seconds left: ");
+    Serial.println(diffSecs);
+
+    return diffSecs;
 }
 
 void setTimer(String data) {
@@ -602,55 +660,16 @@ void setTimer(String data) {
   p.clear();
 
   Serial.println("Settings: ");
+  p.putString("mode", timerMode);
 
   if (timerMode == "preset") {
     String timeStart = doc["startTime"].as<String>();
     int dispAmt = doc["dispenseAmount"].as<int>();
     int dispInterval = doc["interval"].as<int>();
 
-    int arrSize = (60 / dispInterval) * 24;
+    p.putInt("interval", dispInterval);
+    p.putInt("dispAmt", dispAmt);
 
-    struct tm settingTm;
-    time_t now;
-    time(&now);
-
-    // Initialize both structs with current date
-    localtime_r(&now, &settingTm);
-
-    sscanf(timeStart.c_str(), "%d:%d", &settingTm.tm_hour, &settingTm.tm_min);
-
-    time_t newTime = mktime(&settingTm);
-
-    String timers[arrSize];
-    char settingTimeStr[6];
-
-    for (int i = 0; i < arrSize; i++) {
-      Serial.print("b4 add: " + String(settingTm.tm_min));
-      newTime += dispInterval * 60;
-      Serial.print("after add: " + String(settingTm.tm_min));
-
-      struct tm *newTimeinfo = localtime(&newTime);
-
-      strftime(settingTimeStr, sizeof(settingTimeStr), "%H:%M", newTimeinfo);
-      timers[i] = String(settingTimeStr);
-
-      Serial.print("timers[" + String(i) +"]: " + timers[i]);
-    }
-
-    for(int i = 0; i < 7; i++) {
-      String sprayCountTotalKey = "d"+String(i)+"sct";
-      p.putString(sprayCountTotalKey.c_str(),String(arrSize));
-
-      for (int j = 0; j < arrSize; j++) {
-        String sprayCount = "d"+String(i)+"sc" + String(j+1);
-        String sprayTime = "d"+String(i)+"st" + String(j+1);
-
-        p.putString(sprayCount.c_str(),String(dispAmt));
-        p.putString(sprayTime.c_str(),timers[j]);
-
-        Serial.println(" Time: " + String(i) + " " + String(j) + " " + timers[j] + " " + String(dispAmt));
-      }
-    }
   } else if (timerMode == "custom") {
     for(int i = 0; i < settings.size(); i++) {
         JsonVariant setting = settings[i];
