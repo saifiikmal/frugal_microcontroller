@@ -584,11 +584,20 @@ long getNearestInterval(int dispInterval) {
     int currentInterval = (settingTm.tm_min / dispInterval) * dispInterval;
     int nearestMinute = currentInterval + dispInterval;
 
-    if (nearestMinute >= 60) {
+    // if (nearestMinute >= 60) {
+    //     nearestMinute -= 60;
+    //     settingTm.tm_hour = (settingTm.tm_hour + 1) % 24;  // Handle hour overflow
+    // } else {
+    //     settingTm.tm_hour = settingTm.tm_hour;  // Maintain current hour if not rolling over
+    // }
+     if (nearestMinute >= 60) {
         nearestMinute -= 60;
-        settingTm.tm_hour = (settingTm.tm_hour + 1) % 24;  // Handle hour overflow
-    } else {
-        settingTm.tm_hour = settingTm.tm_hour;  // Maintain current hour if not rolling over
+        settingTm.tm_hour++;  
+
+        if (settingTm.tm_hour >= 24) {  
+            settingTm.tm_hour = 0;  // Reset to midnight
+            settingTm.tm_mday++;    // Move to the next day
+        }
     }
 
     // Update the minute and second fields
